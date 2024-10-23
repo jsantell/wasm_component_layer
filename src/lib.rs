@@ -87,6 +87,9 @@
 /// Implements the Canonical ABI conventions for converting between guest and host types.
 mod abi;
 
+/// Provides platform-conditional traits for interfaces.
+mod conditionals;
+
 /// Provides the ability to create and call component model functions.
 mod func;
 

@@ -11,9 +11,36 @@ use wasmtime_environ::component::StringEncoding;
 
 #[allow(unused_imports)]
 use crate::abi::{Generator, *};
+use crate::conditionals::ConditionalSync;
 use crate::types::{FuncType, ValueType};
 use crate::values::Value;
 use crate::{AsContext, AsContextMut, StoreContextMut, *};
+
+/// Represents bounds of a [`Func`].
+pub trait FuncCallback<T, E>:
+    'static + ConditionalSync + Fn(StoreContextMut<T, E>, &[Value], &mut [Value]) -> Result<()>
+{
+}
+
+impl<T, E, X> FuncCallback<T, E> for X where
+    X: 'static + ConditionalSync + Fn(StoreContextMut<T, E>, &[Value], &mut [Value]) -> Result<()>
+{
+}
+
+/// Represents bounds of a [`TypedFunc`].
+pub trait TypedFuncCallback<C: AsContextMut, P: ComponentList, R: ComponentList>:
+    'static + ConditionalSync + Fn(StoreContextMut<C::UserState, C::Engine>, P) -> Result<R>
+{
+}
+
+impl<C, P, R, X> TypedFuncCallback<C, P, R> for X
+where
+    C: AsContextMut,
+    P: ComponentList,
+    R: ComponentList,
+    X: 'static + ConditionalSync + Fn(StoreContextMut<C::UserState, C::Engine>, P) -> Result<R>,
+{
+}
 
 /// Stores the backing implementation for a function.
 #[derive(Clone, Debug)]
@@ -67,10 +94,7 @@ impl Func {
     pub fn new<C: AsContextMut>(
         mut ctx: C,
         ty: FuncType,
-        f: impl 'static
-            + Send
-            + Sync
-            + Fn(StoreContextMut<C::UserState, C::Engine>, &[Value], &mut [Value]) -> Result<()>,
+        f: impl FuncCallback<C::UserState, C::Engine>,
     ) -> Self {
         let mut ctx_mut = ctx.as_context_mut();
         let data = ctx_mut.inner.data_mut();
@@ -1213,10 +1237,7 @@ pub struct TypedFunc<P: ComponentList, R: ComponentList> {
 
 impl<P: ComponentList, R: ComponentList> TypedFunc<P, R> {
     /// Creates a new function, wrapping the given closure.
-    pub fn new<C: AsContextMut>(
-        ctx: C,
-        f: impl 'static + Send + Sync + Fn(StoreContextMut<C::UserState, C::Engine>, P) -> Result<R>,
-    ) -> Self {
+    pub fn new<C: AsContextMut>(ctx: C, f: impl TypedFuncCallback<C, P, R>) -> Self {
         let mut params_results = vec![ValueType::Bool; P::LEN + R::LEN];
         P::into_tys(&mut params_results[..P::LEN]);
         R::into_tys(&mut params_results[P::LEN..]);
@@ -1388,8 +1409,7 @@ impl<const N: usize> ByteArray for [u8; N] {
 }
 
 /// The type of a dynamic host function.
-type FunctionBacking<T, E> =
-    dyn 'static + Send + Sync + Fn(StoreContextMut<T, E>, &[Value], &mut [Value]) -> Result<()>;
+pub type FunctionBacking<T, E> = dyn FuncCallback<T, E>;
 
 /// The type of the key used in the vector of host functions.
 type FunctionBackingKeyPair<T, E> = (Arc<AtomicUsize>, Arc<FunctionBacking<T, E>>);
@@ -1402,10 +1422,7 @@ pub(crate) struct FuncVec<T, E: backend::WasmEngine> {
 
 impl<T, E: backend::WasmEngine> FuncVec<T, E> {
     /// Pushes a new function into the vector.
-    pub fn push(
-        &mut self,
-        f: impl 'static + Send + Sync + Fn(StoreContextMut<T, E>, &[Value], &mut [Value]) -> Result<()>,
-    ) -> Arc<AtomicUsize> {
+    pub fn push(&mut self, f: impl FuncCallback<T, E>) -> Arc<AtomicUsize> {
         if self.functions.capacity() == self.functions.len() {
             self.clear_dead_functions();
         }
