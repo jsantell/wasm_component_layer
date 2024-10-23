@@ -895,6 +895,8 @@ impl<'a, C: AsContextMut> Bindgen for FuncBindgen<'a, C> {
                                 rep,
                                 own: true,
                                 lend_count: 0,
+                                resource: self.component.resource_map[def.index()].as_u32()
+                                    as usize,
                             },
                         ),
                     ));
@@ -919,6 +921,7 @@ impl<'a, C: AsContextMut> Bindgen for FuncBindgen<'a, C> {
                             rep,
                             own: false,
                             lend_count: 0,
+                            resource: res as usize,
                         });
                         results.push(Value::S32(idx));
                         self.handles_to_drop.push((res, idx));
